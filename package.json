@@ -1,0 +1,41 @@
+{
+  "name": "agents-md-doctor",
+  "version": "0.1.0",
+  "description": "A small CLI that checks AGENTS.md and CLAUDE.md files for common agent-instruction problems.",
+  "type": "module",
+  "bin": {
+    "agents-md-doctor": "src/cli.js"
+  },
+  "scripts": {
+    "check": "node ./src/cli.js check .",
+    "test": "node --test",
+    "prepublishOnly": "npm test && npm run check"
+  },
+  "files": [
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plainloop-jp/agents-md-doctor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/plainloop-jp/agents-md-doctor/issues"
+  },
+  "homepage": "https://github.com/plainloop-jp/agents-md-doctor#readme",
+  "keywords": [
+    "agents-md",
+    "claude-md",
+    "ai-agents",
+    "cli",
+    "lint",
+    "developer-tools"
+  ],
+  "author": "plainloop-jp",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
