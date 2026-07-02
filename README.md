@@ -40,6 +40,7 @@ agents-md-doctor check .
 agents-md-doctor check [path]
 agents-md-doctor check [path] --json
 agents-md-doctor check [path] --strict
+agents-md-doctor improve [path] [--force]
 ```
 
 Examples:
@@ -49,6 +50,25 @@ agents-md-doctor check .
 agents-md-doctor check ../my-project --json
 agents-md-doctor check . --strict
 ```
+
+## Improve a file
+
+`check` shows what guidance is missing. `improve` creates a separate copy with safe additions based on the project's existing npm scripts.
+
+```sh
+npx agents-md-doctor improve .
+```
+
+```text
+Before: 55 / 100
+After:  100 / 100
+Created: AGENTS.improved.md
+Added: Useful commands, Testing guidance
+```
+
+Automatic improvement currently supports Node.js projects with a readable `package.json` and existing npm scripts. No external AI or API is used. Your original stays put. The useful additions go into a new file, so the original `AGENTS.md` or `CLAUDE.md` stays unchanged.
+
+The new file is named `AGENTS.improved.md` or `CLAUDE.improved.md`, matching the source file. If that output already exists, use `--force` to replace a normal file; aliases such as symbolic links are rejected. Scores can improve without always reaching 100.
 
 ## Example Output
 
@@ -84,6 +104,8 @@ The checks are intentionally simple and transparent. This is not an AI code revi
 `AGENTS.md` や `CLAUDE.md` は、AIコーディングエージェントに「このプロジェクトではどう動いてほしいか」を伝えるための説明書です。
 
 AGENTS.md Doctor は、その説明書が長すぎないか、テスト方法が書かれているか、不要なルールを書きすぎていないかを確認する小さなCLIです。
+
+`improve` は、読み取り可能な `package.json` と既存の npm scripts がある Node.js プロジェクトで、不足している案内を安全に補った別ファイルを作成します。外部の AI や API は使わず、元の `AGENTS.md` または `CLAUDE.md` は変更しません。スコアは改善しても、必ず 100 になるとは限りません。
 
 ```sh
 npx agents-md-doctor check .

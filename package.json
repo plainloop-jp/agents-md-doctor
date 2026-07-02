@@ -1,6 +1,6 @@
 {
   "name": "agents-md-doctor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A small CLI that checks AGENTS.md and CLAUDE.md files for common agent-instruction problems.",
   "type": "module",
   "bin": {
