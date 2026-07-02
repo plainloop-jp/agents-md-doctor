@@ -1,6 +1,17 @@
 #!/usr/bin/env node
 
-import { access, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  access,
+  link,
+  lstat,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile
+} from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -134,6 +145,84 @@ async function outputExists(filePath) {
   }
 }
 
+async function lstatIfExists(filePath) {
+  try {
+    return await lstat(filePath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function pathsMatch(left, right) {
+  if (process.platform === "win32") {
+    return left.toLowerCase() === right.toLowerCase();
+  }
+
+  return left === right;
+}
+
+async function outputAliasesSource(sourcePath, outputPath) {
+  const outputLinkStat = await lstatIfExists(outputPath);
+  if (!outputLinkStat) {
+    return false;
+  }
+
+  if (outputLinkStat.isSymbolicLink()) {
+    try {
+      const [resolvedSource, resolvedOutput] = await Promise.all([
+        realpath(sourcePath),
+        realpath(outputPath)
+      ]);
+
+      if (pathsMatch(resolvedSource, resolvedOutput)) {
+        return true;
+      }
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  let outputStat;
+  try {
+    outputStat = await stat(outputPath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return false;
+    }
+
+    throw error;
+  }
+
+  const sourceStat = await stat(sourcePath);
+  return sourceStat.dev === outputStat.dev && sourceStat.ino === outputStat.ino;
+}
+
+async function writeImprovedOutput(outputPath, content, force) {
+  const tempName = `.${path.basename(outputPath)}.${process.pid}.${randomUUID()}.tmp`;
+  const tempPath = path.join(path.dirname(outputPath), tempName);
+
+  try {
+    await writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });
+
+    if (!force) {
+      // Reserve the destination atomically; both names then identify the temp inode.
+      await link(tempPath, outputPath);
+    }
+
+    await rename(tempPath, outputPath);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+}
+
 function printPackageRequiredError() {
   console.error("A valid package.json is required to improve instructions.");
 }
@@ -158,7 +247,7 @@ async function improveInstructions(targetPath, force) {
 
   const before = scoreContent(source, source.content);
   if (before.score === before.maxScore) {
-    console.log("No improvement needed. Score: 100 / 100");
+    console.log(`No improvement needed. Score: ${before.score} / ${before.maxScore}`);
     return;
   }
 
@@ -204,11 +293,14 @@ async function improveInstructions(targetPath, force) {
     return;
   }
 
+  if (force && await outputAliasesSource(source.filePath, outputPath)) {
+    console.error(`Unsafe output path: ${outputName} aliases ${source.fileName}.`);
+    process.exitCode = 1;
+    return;
+  }
+
   try {
-    await writeFile(outputPath, improved.content, {
-      encoding: "utf8",
-      flag: force ? "w" : "wx"
-    });
+    await writeImprovedOutput(outputPath, improved.content, force);
   } catch (error) {
     if (!force && error.code === "EEXIST") {
       console.error(`Output already exists: ${outputName}. Use --force to replace it.`);

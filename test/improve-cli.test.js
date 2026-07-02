@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+  access,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  stat,
+  symlink,
+  writeFile
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,6 +40,13 @@ async function pathExists(filePath) {
 
 async function writeManifest(projectPath, value = { scripts: { test: "node --test" } }) {
   await writeFile(path.join(projectPath, "package.json"), JSON.stringify(value));
+}
+
+async function findTemporaryOutputs(projectPath, outputName = "AGENTS.improved.md") {
+  const prefix = `.${outputName}.`;
+  return (await readdir(projectPath)).filter(
+    (fileName) => fileName.startsWith(prefix) && fileName.endsWith(".tmp")
+  );
 }
 
 test("improve creates a separate AGENTS file and leaves the source unchanged", async () => {
@@ -78,8 +96,10 @@ test("improve refuses to replace an existing output without force", async () => 
 
 test("improve replaces an existing output with force", async () => {
   const projectPath = await makeProject();
+  const sourcePath = path.join(projectPath, "AGENTS.md");
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
-  await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n");
+  const sourceContent = "# Project instructions\n";
+  await writeFile(sourcePath, sourceContent);
   await writeManifest(projectPath);
   await writeFile(outputPath, "existing output\n");
 
@@ -87,7 +107,62 @@ test("improve replaces an existing output with force", async () => {
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Created: AGENTS\.improved\.md/);
+  assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
   assert.notEqual(await readFile(outputPath, "utf8"), "existing output\n");
+  assert.deepEqual(await findTemporaryOutputs(projectPath), []);
+});
+
+test("improve force rejects a hardlink output that aliases the source", async () => {
+  const projectPath = await makeProject();
+  const sourcePath = path.join(projectPath, "AGENTS.md");
+  const outputPath = path.join(projectPath, "AGENTS.improved.md");
+  const sourceContent = "# Project instructions\n";
+  await writeFile(sourcePath, sourceContent);
+  await writeManifest(projectPath);
+  await link(sourcePath, outputPath);
+
+  const result = runCli(["improve", projectPath, "--force"]);
+  const sourceStat = await stat(sourcePath);
+  const outputStat = await stat(outputPath);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unsafe output/i);
+  assert.doesNotMatch(result.stdout, /Created:/);
+  assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
+  assert.equal(await readFile(outputPath, "utf8"), sourceContent);
+  assert.equal(sourceStat.dev, outputStat.dev);
+  assert.equal(sourceStat.ino, outputStat.ino);
+  assert.deepEqual(await findTemporaryOutputs(projectPath), []);
+});
+
+test("improve force rejects a symlink output that aliases the source", async (t) => {
+  const projectPath = await makeProject();
+  const sourcePath = path.join(projectPath, "AGENTS.md");
+  const outputPath = path.join(projectPath, "AGENTS.improved.md");
+  const sourceContent = "# Project instructions\n";
+  await writeFile(sourcePath, sourceContent);
+  await writeManifest(projectPath);
+
+  try {
+    await symlink(sourcePath, outputPath, "file");
+  } catch (error) {
+    if (process.platform === "win32" && error.code === "EPERM") {
+      t.skip("Windows denied symlink creation because the process lacks symlink privilege.");
+      return;
+    }
+
+    throw error;
+  }
+
+  const result = runCli(["improve", projectPath, "--force"]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unsafe output/i);
+  assert.doesNotMatch(result.stdout, /Created:/);
+  assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
+  assert.equal(await readFile(outputPath, "utf8"), sourceContent);
+  assert.equal((await lstat(outputPath)).isSymbolicLink(), true);
+  assert.deepEqual(await findTemporaryOutputs(projectPath), []);
 });
 
 test("improve exits 2 without false success when the output cannot be written", async () => {
@@ -103,6 +178,7 @@ test("improve exits 2 without false success when the output cannot be written", 
   assert.equal(result.status, 2);
   assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
   assert.doesNotMatch(result.stdout, /Created:/);
+  assert.deepEqual(await findTemporaryOutputs(projectPath), []);
 });
 
 test("improve requires package.json and creates no output when it is missing", async () => {
