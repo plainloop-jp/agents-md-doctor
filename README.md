@@ -53,11 +53,13 @@ agents-md-doctor check . --strict
 
 ## Improve a file
 
-`check` shows what guidance is missing. `improve` creates a separate copy with safe additions based on the project's existing npm scripts.
+`check` reports missing guidance. `improve` leaves the source unchanged and writes a separate `.improved.md` copy using only commands it can safely derive from `package.json`.
 
 ```sh
 npx agents-md-doctor improve .
 ```
+
+Example when both missing checks can be filled safely:
 
 ```text
 Before: 55 / 100
@@ -66,9 +68,9 @@ Created: AGENTS.improved.md
 Added: Useful commands, Testing guidance
 ```
 
-Automatic improvement currently supports Node.js projects with a readable `package.json` and existing npm scripts. No external AI or API is used. Your original stays put. The useful additions go into a new file, so the original `AGENTS.md` or `CLAUDE.md` stays unchanged.
+Automatic improvement currently supports Node.js projects with a readable `package.json`. It can add `npm install` plus commands for existing `test`, `check`, `lint`, `typecheck`, or `build` scripts. These commands are not run, and no external AI or APIs are used. Your original stays put. The useful additions go into a new file.
 
-The new file is named `AGENTS.improved.md` or `CLAUDE.improved.md`, matching the source file. If that output already exists, use `--force` to replace a normal file; aliases such as symbolic links are rejected. Scores can improve without always reaching 100.
+The new file is named `AGENTS.improved.md` or `CLAUDE.improved.md`, matching the source file. If that output already exists, use `--force` to replace it. `--force` refuses an output path that aliases the source, including a symbolic link or hard link. Scores can improve without always reaching 100.
 
 ## Example Output
 
@@ -105,10 +107,11 @@ The checks are intentionally simple and transparent. This is not an AI code revi
 
 AGENTS.md Doctor は、その説明書が長すぎないか、テスト方法が書かれているか、不要なルールを書きすぎていないかを確認する小さなCLIです。
 
-`improve` は、読み取り可能な `package.json` と既存の npm scripts がある Node.js プロジェクトで、不足している案内を安全に補った別ファイルを作成します。外部の AI や API は使わず、元の `AGENTS.md` または `CLAUDE.md` は変更しません。スコアは改善しても、必ず 100 になるとは限りません。
+`improve` は、読み取り可能な `package.json` がある Node.js プロジェクトで、`npm install` と既存の npm scripts（`test`、`check`、`lint`、`typecheck`、`build`）から安全に作れるコマンドだけを補います。コマンドは実行せず、外部の AI や API も使いません。元の `AGENTS.md` または `CLAUDE.md` は変更せず、`AGENTS.improved.md` または `CLAUDE.improved.md` を別に作成します。出力が既にある場合は `--force` で置き換えられますが、元ファイルを指すシンボリックリンクやハードリンクは拒否します。スコアは改善しても、必ず 100 になるとは限りません。
 
 ```sh
 npx agents-md-doctor check .
+npx agents-md-doctor improve .
 ```
 
 ## License
