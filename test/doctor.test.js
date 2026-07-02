@@ -7,7 +7,8 @@ import test from "node:test";
 
 import {
   checkAgentInstructionContent,
-  checkAgentInstructions
+  checkAgentInstructions,
+  findAgentInstructionFile
 } from "../src/doctor.js";
 
 async function makeProject() {
@@ -71,6 +72,41 @@ test("scores instruction content without writing a file", async () => {
   assert.equal(report.score, 100);
   assert.equal(report.passed, true);
   assert.equal(report.fileName, "AGENTS.improved.md");
+});
+
+test("finds an instruction file with resolved metadata and content", async () => {
+  const projectPath = await makeProject();
+  const filePath = path.join(projectPath, "AGENTS.md");
+  const content = "# Project instructions\n";
+  await writeFile(filePath, content);
+
+  const result = await findAgentInstructionFile(projectPath);
+
+  assert.deepEqual(result, {
+    projectPath,
+    fileName: "AGENTS.md",
+    filePath,
+    content
+  });
+});
+
+test("prefers AGENTS.md when both instruction files exist", async () => {
+  const projectPath = await makeProject();
+  await writeFile(path.join(projectPath, "AGENTS.md"), "AGENTS instructions");
+  await writeFile(path.join(projectPath, "CLAUDE.md"), "CLAUDE instructions");
+
+  const result = await findAgentInstructionFile(projectPath);
+
+  assert.equal(result.fileName, "AGENTS.md");
+  assert.equal(result.content, "AGENTS instructions");
+});
+
+test("returns null when no instruction file exists", async () => {
+  const projectPath = await makeProject();
+
+  const result = await findAgentInstructionFile(projectPath);
+
+  assert.equal(result, null);
 });
 
 test("warns about repeated lint or formatting instructions", async () => {
