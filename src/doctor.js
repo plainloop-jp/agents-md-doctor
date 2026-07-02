@@ -52,12 +52,15 @@ async function fileExists(filePath) {
   }
 }
 
-async function readConfigFile(projectPath) {
+export async function findAgentInstructionFile(targetPath = ".") {
+  const projectPath = path.resolve(targetPath);
+
   for (const fileName of CONFIG_FILES) {
     const filePath = path.join(projectPath, fileName);
 
     if (await fileExists(filePath)) {
       return {
+        projectPath,
         fileName,
         filePath,
         content: await readFile(filePath, "utf8")
@@ -160,13 +163,22 @@ function createMissingReport(projectPath, strict) {
 export async function checkAgentInstructions(targetPath = ".", options = {}) {
   const projectPath = path.resolve(targetPath);
   const strict = Boolean(options.strict);
-  const config = await readConfigFile(projectPath);
+  const config = await findAgentInstructionFile(projectPath);
 
   if (!config) {
     return createMissingReport(projectPath, strict);
   }
 
-  const content = config.content;
+  return checkAgentInstructionContent({ ...config, strict });
+}
+
+export function checkAgentInstructionContent({
+  projectPath,
+  fileName,
+  filePath,
+  content,
+  strict = false
+}) {
   const lowerContent = content.toLowerCase();
   const lines = content.split(/\r?\n/);
   const nonEmptyLines = lines.filter((line) => line.trim().length > 0);
@@ -182,7 +194,7 @@ export async function checkAgentInstructions(targetPath = ".", options = {}) {
       "config-file",
       "Configuration file",
       true,
-      `${config.fileName} found.`,
+      `${fileName} found.`,
       30
     ),
     makeCheck(
@@ -261,8 +273,8 @@ export async function checkAgentInstructions(targetPath = ".", options = {}) {
 
   return {
     projectPath,
-    fileName: config.fileName,
-    filePath: config.filePath,
+    fileName,
+    filePath,
     strict,
     checks,
     findings,

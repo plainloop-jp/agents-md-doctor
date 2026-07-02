@@ -5,7 +5,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { checkAgentInstructions } from "../src/doctor.js";
+import {
+  checkAgentInstructionContent,
+  checkAgentInstructions
+} from "../src/doctor.js";
 
 async function makeProject() {
   return mkdtemp(path.join(os.tmpdir(), "agents-md-doctor-"));
@@ -43,6 +46,31 @@ test("passes a concise AGENTS.md with commands and testing guidance", async () =
   assert.equal(report.passed, true);
   assert.equal(report.score, 100);
   assert.equal(report.fileName, "AGENTS.md");
+});
+
+test("scores instruction content without writing a file", async () => {
+  const projectPath = path.resolve("virtual-project");
+  const report = await checkAgentInstructionContent({
+    projectPath,
+    fileName: "AGENTS.improved.md",
+    filePath: path.join(projectPath, "AGENTS.improved.md"),
+    content: `# AGENTS.md
+
+## Commands
+
+- Install dependencies: npm install
+- Run tests: npm test
+
+## Workflow
+
+- Keep changes small.
+- Run tests before handing off work.
+`
+  });
+
+  assert.equal(report.score, 100);
+  assert.equal(report.passed, true);
+  assert.equal(report.fileName, "AGENTS.improved.md");
 });
 
 test("warns about repeated lint or formatting instructions", async () => {
