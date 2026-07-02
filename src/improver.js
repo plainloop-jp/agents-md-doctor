@@ -5,8 +5,21 @@ function formatNpmScript(name) {
   return name === "test" ? "npm test" : `npm run ${name}`;
 }
 
+function isNonArrayObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function discoverNpmCommands(packageJson) {
-  const scripts = packageJson?.scripts ?? {};
+  if (!isNonArrayObject(packageJson)) {
+    throw new Error("Invalid package.json: expected a non-array object.");
+  }
+
+  const hasScripts = Object.hasOwn(packageJson, "scripts");
+  if (hasScripts && !isNonArrayObject(packageJson.scripts)) {
+    throw new Error('Invalid package.json: "scripts" must be a non-array object.');
+  }
+
+  const scripts = hasScripts ? packageJson.scripts : {};
   const names = SUPPORTED_SCRIPTS.filter(
     (name) => typeof scripts[name] === "string" && scripts[name].trim().length > 0
   );
@@ -26,9 +39,25 @@ export function getImprovedFileName(sourceFileName) {
   throw new Error(`Unsupported instruction file: ${sourceFileName}`);
 }
 
-function appendSection(content, title, bullets) {
-  const base = content.endsWith("\n") ? content : `${content}\n`;
-  return `${base}\n## ${title}\n\n${bullets.map((item) => `- ${item}`).join("\n")}\n`;
+function appendSection(content, title, bullets, newline) {
+  const base = content.endsWith(newline) ? content : `${content}${newline}`;
+  const bulletLines = bullets.map((item) => `- ${item}`).join(newline);
+  return `${base}${newline}## ${title}${newline}${newline}${bulletLines}${newline}`;
+}
+
+function addCommandsSection(content, bullets, newline) {
+  const heading = /^[\t ]*## Commands[\t ]*$/im.exec(content);
+
+  if (!heading) {
+    return appendSection(content, "Commands", bullets, newline);
+  }
+
+  const insertionIndex = heading.index + heading[0].length;
+  const suffix = content.slice(insertionIndex);
+  const trailingNewline = suffix.startsWith(newline) ? "" : newline;
+  const bulletLines = bullets.map((item) => `- ${item}`).join(newline);
+
+  return `${content.slice(0, insertionIndex)}${newline}${newline}${bulletLines}${trailingNewline}${suffix}`;
 }
 
 function failed(report, id) {
@@ -37,6 +66,7 @@ function failed(report, id) {
 
 export function createImprovedContent({ sourceContent, report, packageJson }) {
   const commands = discoverNpmCommands(packageJson);
+  const newline = sourceContent.includes("\r\n") ? "\r\n" : "\n";
   const additions = [];
   let content = sourceContent;
 
@@ -45,7 +75,7 @@ export function createImprovedContent({ sourceContent, report, packageJson }) {
       `Install dependencies: \`${commands.install}\``,
       ...commands.scripts.map((command) => `Run project command: \`${command}\``)
     ];
-    content = appendSection(content, "Commands", bullets);
+    content = addCommandsSection(content, bullets, newline);
     additions.push("Useful commands");
   }
 
@@ -53,7 +83,7 @@ export function createImprovedContent({ sourceContent, report, packageJson }) {
     const bullets = commands.verification.map(
       (command) => `Before finishing, run: \`${command}\``
     );
-    content = appendSection(content, "Verification", bullets);
+    content = appendSection(content, "Verification", bullets, newline);
     additions.push("Testing guidance");
   }
 
