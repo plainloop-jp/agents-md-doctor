@@ -107,7 +107,7 @@ The checks are intentionally simple and transparent. This is not an AI code revi
 
 AGENTS.md Doctor は、その説明書が長すぎないか、テスト方法が書かれているか、不要なルールを書きすぎていないかを確認する小さなCLIです。
 
-`improve` は、読み取り可能な `package.json` がある Node.js プロジェクトで、`npm install` と既存の npm scripts（`test`、`check`、`lint`、`typecheck`、`build`）から安全に作れるコマンドだけを補います。コマンドは実行せず、外部の AI や API も使いません。元の `AGENTS.md` または `CLAUDE.md` は変更せず、`AGENTS.improved.md` または `CLAUDE.improved.md` を別に作成します。出力が既にある場合は `--force` で置き換えられますが、元ファイルを指すシンボリックリンクやハードリンクは拒否します。スコアは改善しても、必ず 100 になるとは限りません。
+`improve` は、読み取り可能な `package.json` がある Node.js プロジェクトに対応しています。`npm install` と既存の npm スクリプト（`test`、`check`、`lint`、`typecheck`、`build`）から安全に導ける案内だけを追加し、コマンド自体は実行しません。外部の AI や API も使用しません。元の `AGENTS.md` または `CLAUDE.md` は変更せず、`AGENTS.improved.md` または `CLAUDE.improved.md` を別に作成します。出力が既にある場合は `--force` で置き換えますが、出力先がシンボリックリンクまたはハードリンクによって元ファイルと同じ実体を指す場合は拒否します。スコアが必ず 100 になるわけではありません。
 
 ```sh
 npx agents-md-doctor check .
