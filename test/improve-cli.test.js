@@ -90,6 +90,21 @@ test("improve replaces an existing output with force", async () => {
   assert.notEqual(await readFile(outputPath, "utf8"), "existing output\n");
 });
 
+test("improve exits 2 without false success when the output cannot be written", async () => {
+  const projectPath = await makeProject();
+  const sourcePath = path.join(projectPath, "AGENTS.md");
+  const sourceContent = "# Project instructions\n";
+  await writeFile(sourcePath, sourceContent);
+  await writeManifest(projectPath);
+  await mkdir(path.join(projectPath, "AGENTS.improved.md"));
+
+  const result = runCli(["improve", projectPath, "--force"]);
+
+  assert.equal(result.status, 2);
+  assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
+  assert.doesNotMatch(result.stdout, /Created:/);
+});
+
 test("improve requires package.json and creates no output when it is missing", async () => {
   const projectPath = await makeProject();
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
