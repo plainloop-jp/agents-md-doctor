@@ -7,25 +7,54 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+
+import { checkAgentInstructionContent } from "../src/doctor.js";
 
 const CLI_PATH = path.resolve("src/cli.js");
 
-async function makeProject() {
-  return mkdtemp(path.join(os.tmpdir(), "agents-md-doctor-improve-"));
+async function makeProject(t) {
+  const projectPath = await mkdtemp(path.join(os.tmpdir(), "agents-md-doctor-improve-"));
+  t.after(() => rm(projectPath, { recursive: true, force: true }));
+  return projectPath;
 }
 
 function runCli(args, options = {}) {
   return spawnSync(process.execPath, [CLI_PATH, ...args], {
     cwd: options.cwd ?? path.resolve("."),
     encoding: "utf8"
+  });
+}
+
+function runCliAsync(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [CLI_PATH, ...args], {
+      cwd: options.cwd ?? path.resolve("."),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status, signal) => {
+      resolve({ status, signal, stdout, stderr });
+    });
   });
 }
 
@@ -49,8 +78,8 @@ async function findTemporaryOutputs(projectPath, outputName = "AGENTS.improved.m
   );
 }
 
-test("improve creates a separate AGENTS file and leaves the source unchanged", async () => {
-  const projectPath = await makeProject();
+test("improve creates a separate AGENTS file and leaves the source unchanged", async (t) => {
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "AGENTS.md");
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   const sourceContent = "# Project instructions\n\nKeep changes small.\n";
@@ -79,8 +108,45 @@ test("improve creates a separate AGENTS file and leaves the source unchanged", a
   assert.match(await readFile(outputPath, "utf8"), /## Verification/);
 });
 
-test("improve refuses to replace an existing output without force", async () => {
-  const projectPath = await makeProject();
+test(
+  "simultaneous non-force improves create exactly one complete output",
+  { timeout: 30_000 },
+  async (t) => {
+    const projectPath = await makeProject(t);
+    const sourcePath = path.join(projectPath, "AGENTS.md");
+    const outputPath = path.join(projectPath, "AGENTS.improved.md");
+    const sourceContent = "# Project instructions\n\nKeep changes small.\n";
+    await writeFile(sourcePath, sourceContent);
+    await writeManifest(projectPath);
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => runCliAsync(["improve", projectPath]))
+    );
+    const successes = results.filter((result) => result.status === 0);
+    const refusals = results.filter((result) => result.status === 1);
+
+    assert.equal(successes.length, 1);
+    assert.equal(refusals.length, 7);
+    assert.equal(results.every((result) => result.signal === null), true);
+    assert.equal(await readFile(sourcePath, "utf8"), sourceContent);
+
+    const outputContent = await readFile(outputPath, "utf8");
+    const report = checkAgentInstructionContent({
+      projectPath,
+      fileName: "AGENTS.improved.md",
+      filePath: outputPath,
+      content: outputContent
+    });
+
+    assert.equal(report.score, report.maxScore);
+    assert.match(outputContent, /^## Commands$/m);
+    assert.match(outputContent, /^## Verification$/m);
+    assert.deepEqual(await findTemporaryOutputs(projectPath), []);
+  }
+);
+
+test("improve refuses to replace an existing output without force", async (t) => {
+  const projectPath = await makeProject(t);
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n");
   await writeManifest(projectPath);
@@ -94,8 +160,8 @@ test("improve refuses to replace an existing output without force", async () => 
   assert.equal(await readFile(outputPath, "utf8"), "existing output\n");
 });
 
-test("improve replaces an existing output with force", async () => {
-  const projectPath = await makeProject();
+test("improve replaces an existing output with force", async (t) => {
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "AGENTS.md");
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   const sourceContent = "# Project instructions\n";
@@ -112,8 +178,8 @@ test("improve replaces an existing output with force", async () => {
   assert.deepEqual(await findTemporaryOutputs(projectPath), []);
 });
 
-test("improve force rejects a hardlink output that aliases the source", async () => {
-  const projectPath = await makeProject();
+test("improve force rejects a hardlink output that aliases the source", async (t) => {
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "AGENTS.md");
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   const sourceContent = "# Project instructions\n";
@@ -136,7 +202,7 @@ test("improve force rejects a hardlink output that aliases the source", async ()
 });
 
 test("improve force rejects a symlink output that aliases the source", async (t) => {
-  const projectPath = await makeProject();
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "AGENTS.md");
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   const sourceContent = "# Project instructions\n";
@@ -165,8 +231,8 @@ test("improve force rejects a symlink output that aliases the source", async (t)
   assert.deepEqual(await findTemporaryOutputs(projectPath), []);
 });
 
-test("improve exits 2 without false success when the output cannot be written", async () => {
-  const projectPath = await makeProject();
+test("improve exits 2 without false success when the output cannot be written", async (t) => {
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "AGENTS.md");
   const sourceContent = "# Project instructions\n";
   await writeFile(sourcePath, sourceContent);
@@ -181,8 +247,8 @@ test("improve exits 2 without false success when the output cannot be written", 
   assert.deepEqual(await findTemporaryOutputs(projectPath), []);
 });
 
-test("improve requires package.json and creates no output when it is missing", async () => {
-  const projectPath = await makeProject();
+test("improve requires package.json and creates no output when it is missing", async (t) => {
+  const projectPath = await makeProject(t);
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n");
 
@@ -194,8 +260,8 @@ test("improve requires package.json and creates no output when it is missing", a
   assert.equal(await pathExists(outputPath), false);
 });
 
-test("improve rejects invalid package.json and creates no output", async () => {
-  const projectPath = await makeProject();
+test("improve rejects invalid package.json and creates no output", async (t) => {
+  const projectPath = await makeProject(t);
   const outputPath = path.join(projectPath, "AGENTS.improved.md");
   await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n");
   await writeFile(path.join(projectPath, "package.json"), "{ invalid json");
@@ -230,8 +296,8 @@ test("improve rejects unreadable and malformed package manifests", async (t) => 
   ];
 
   for (const manifestCase of cases) {
-    await t.test(manifestCase.name, async () => {
-      const projectPath = await makeProject();
+    await t.test(manifestCase.name, async (t) => {
+      const projectPath = await makeProject(t);
       await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n");
       await manifestCase.prepare(projectPath);
 
@@ -244,8 +310,8 @@ test("improve rejects unreadable and malformed package manifests", async (t) => 
   }
 });
 
-test("improve reports a missing instruction file and creates no output", async () => {
-  const projectPath = await makeProject();
+test("improve reports a missing instruction file and creates no output", async (t) => {
+  const projectPath = await makeProject(t);
 
   const result = runCli(["improve", projectPath]);
 
@@ -256,8 +322,8 @@ test("improve reports a missing instruction file and creates no output", async (
   assert.equal(await pathExists(path.join(projectPath, "CLAUDE.improved.md")), false);
 });
 
-test("improve exits successfully without package.json when the source is complete", async () => {
-  const projectPath = await makeProject();
+test("improve exits successfully without package.json when the source is complete", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
     "# AGENTS.md\n\n## Commands\n\n- Run tests: npm test\n"
@@ -271,8 +337,8 @@ test("improve exits successfully without package.json when the source is complet
   assert.equal(await pathExists(path.join(projectPath, "AGENTS.improved.md")), false);
 });
 
-test("improve creates CLAUDE.improved.md when CLAUDE.md is the source", async () => {
-  const projectPath = await makeProject();
+test("improve creates CLAUDE.improved.md when CLAUDE.md is the source", async (t) => {
+  const projectPath = await makeProject(t);
   const sourcePath = path.join(projectPath, "CLAUDE.md");
   const sourceContent = "# Project instructions\n";
   await writeFile(sourcePath, sourceContent);
@@ -287,8 +353,8 @@ test("improve creates CLAUDE.improved.md when CLAUDE.md is the source", async ()
   assert.equal(await pathExists(path.join(projectPath, "AGENTS.improved.md")), false);
 });
 
-test("improve creates nothing when no safe automatic improvement is available", async () => {
-  const projectPath = await makeProject();
+test("improve creates nothing when no safe automatic improvement is available", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(path.join(projectPath, "AGENTS.md"), "# Project instructions\n\nUse npm install.\n");
   await writeManifest(projectPath, { scripts: { build: "node build.js" } });
 
@@ -300,8 +366,8 @@ test("improve creates nothing when no safe automatic improvement is available", 
   assert.equal(await pathExists(path.join(projectPath, "AGENTS.improved.md")), false);
 });
 
-test("CLI restricts command flags and keeps help and default check behavior", async () => {
-  const projectPath = await makeProject();
+test("CLI restricts command flags and keeps help and default check behavior", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
     "# AGENTS.md\n\n## Commands\n\n- Run tests: npm test\n"
