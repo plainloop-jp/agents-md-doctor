@@ -45,14 +45,81 @@ function appendSection(content, title, bullets, newline) {
   return `${base}${newline}## ${title}${newline}${newline}${bulletLines}${newline}`;
 }
 
+function updateHtmlCommentState(line, inComment) {
+  let index = 0;
+
+  while (index < line.length) {
+    if (inComment) {
+      const commentEnd = line.indexOf("-->", index);
+      if (commentEnd === -1) return true;
+      inComment = false;
+      index = commentEnd + 3;
+      continue;
+    }
+
+    const commentStart = line.indexOf("<!--", index);
+    if (commentStart === -1) return false;
+    inComment = true;
+    index = commentStart + 4;
+  }
+
+  return inComment;
+}
+
+function findCommandsHeading(content) {
+  let fence = null;
+  let inHtmlComment = false;
+  let lineStart = 0;
+
+  while (lineStart < content.length) {
+    const newlineIndex = content.indexOf("\n", lineStart);
+    const lineEnd = newlineIndex === -1 ? content.length : newlineIndex;
+    const rawLine = content.slice(lineStart, lineEnd);
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+
+    if (fence) {
+      const closingFence = /^ {0,3}(`+|~+)[\t ]*$/.exec(line);
+      if (
+        closingFence &&
+        closingFence[1][0] === fence.character &&
+        closingFence[1].length >= fence.length
+      ) {
+        fence = null;
+      }
+    } else if (inHtmlComment) {
+      inHtmlComment = updateHtmlCommentState(line, true);
+    } else {
+      const openingFence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      const validOpeningFence =
+        openingFence &&
+        (openingFence[1][0] === "~" || !openingFence[2].includes("`"));
+
+      if (validOpeningFence) {
+        fence = {
+          character: openingFence[1][0],
+          length: openingFence[1].length
+        };
+      } else if (line.includes("<!--")) {
+        inHtmlComment = updateHtmlCommentState(line, false);
+      } else if (/^ {0,3}##[\t ]+commands(?:[\t ]+#+)?[\t ]*$/i.test(line)) {
+        return { index: lineStart, length: line.length };
+      }
+    }
+
+    lineStart = newlineIndex === -1 ? content.length : newlineIndex + 1;
+  }
+
+  return null;
+}
+
 function addCommandsSection(content, bullets, newline) {
-  const heading = /^[\t ]*## Commands[\t ]*$/im.exec(content);
+  const heading = findCommandsHeading(content);
 
   if (!heading) {
     return appendSection(content, "Commands", bullets, newline);
   }
 
-  const insertionIndex = heading.index + heading[0].length;
+  const insertionIndex = heading.index + heading.length;
   const suffix = content.slice(insertionIndex);
   const trailingNewline = suffix.startsWith(newline) ? "" : newline;
   const bulletLines = bullets.map((item) => `- ${item}`).join(newline);

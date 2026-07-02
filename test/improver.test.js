@@ -7,6 +7,19 @@ import {
   getImprovedFileName
 } from "../src/improver.js";
 
+function improveMissingCommands(sourceContent) {
+  return createImprovedContent({
+    sourceContent,
+    report: {
+      checks: [
+        { id: "commands", passed: false },
+        { id: "testing-guidance", passed: true }
+      ]
+    },
+    packageJson: { scripts: { test: "node --test" } }
+  });
+}
+
 test("discovers supported npm scripts in deterministic order", () => {
   const commands = discoverNpmCommands({
     scripts: {
@@ -138,6 +151,65 @@ test("adds command bullets inside an existing Commands section", () => {
   assert.equal(commandHeadings.length, 1);
   assert.equal(headingIndex < installIndex && installIndex < workflowIndex, true);
   assert.deepEqual(result.additions, ["Useful commands"]);
+});
+
+test("ignores a Commands heading inside a backtick fence", () => {
+  const sourceContent = [
+    "# Rules",
+    "",
+    "```markdown",
+    "## Commands",
+    "`````",
+    ""
+  ].join("\n");
+
+  const result = improveMissingCommands(sourceContent);
+
+  assert.equal(result.content.startsWith(sourceContent), true);
+  assert.match(result.content.slice(sourceContent.length), /^\n## Commands\n\n-/);
+});
+
+test("ignores a Commands heading inside a tilde fence", () => {
+  const sourceContent = ["# Rules", "", "~~~~", "## Commands", "~~~~", ""].join("\n");
+
+  const result = improveMissingCommands(sourceContent);
+
+  assert.equal(result.content.startsWith(sourceContent), true);
+  assert.match(result.content.slice(sourceContent.length), /^\n## Commands\n\n-/);
+});
+
+test("ignores a Commands heading inside a single-line HTML comment", () => {
+  const sourceContent = "# Rules\n\n<!-- ## Commands -->\n";
+
+  const result = improveMissingCommands(sourceContent);
+
+  assert.equal(result.content.startsWith(sourceContent), true);
+  assert.match(result.content.slice(sourceContent.length), /^\n## Commands\n\n-/);
+});
+
+test("ignores a Commands heading inside a multi-line HTML comment", () => {
+  const sourceContent = "# Rules\n\n<!--\n## Commands\n-->\n";
+
+  const result = improveMissingCommands(sourceContent);
+
+  assert.equal(result.content.startsWith(sourceContent), true);
+  assert.match(result.content.slice(sourceContent.length), /^\n## Commands\n\n-/);
+});
+
+test("adds command bullets to a Commands heading with closing hashes", () => {
+  const sourceContent = "# Rules\n\n   ## cOmMaNdS ##   \n\n- Existing note.\n";
+
+  const result = improveMissingCommands(sourceContent);
+  const lines = result.content.split("\n");
+  const commandHeadings = lines.filter((line) =>
+    /^ {0,3}##[\t ]+commands(?:[\t ]+#+)?[\t ]*$/i.test(line)
+  );
+  const headingIndex = lines.indexOf("   ## cOmMaNdS ##   ");
+  const installIndex = lines.indexOf("- Install dependencies: `npm install`");
+  const existingIndex = lines.indexOf("- Existing note.");
+
+  assert.equal(commandHeadings.length, 1);
+  assert.equal(headingIndex < installIndex && installIndex < existingIndex, true);
 });
 
 test("uses CRLF for every generated line when the source uses CRLF", () => {
