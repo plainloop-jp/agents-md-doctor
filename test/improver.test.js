@@ -153,6 +153,34 @@ test("adds command bullets inside an existing Commands section", () => {
   assert.deepEqual(result.additions, ["Useful commands"]);
 });
 
+test("adds command bullets to a Commands heading before a trailing HTML comment", () => {
+  const sourceContent = [
+    "# Rules",
+    "",
+    "## Commands <!-- note -->",
+    "",
+    "- Existing note.",
+    ""
+  ].join("\n");
+
+  const result = improveMissingCommands(sourceContent);
+
+  assert.equal(
+    result.content,
+    [
+      "# Rules",
+      "",
+      "## Commands <!-- note -->",
+      "",
+      "- Install dependencies: `npm install`",
+      "- Run project command: `npm test`",
+      "",
+      "- Existing note.",
+      ""
+    ].join("\n")
+  );
+});
+
 test("ignores a Commands heading inside a backtick fence", () => {
   const sourceContent = [
     "# Rules",

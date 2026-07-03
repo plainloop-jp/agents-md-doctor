@@ -89,7 +89,9 @@ function findCommandsHeading(content) {
     } else if (inHtmlComment) {
       inHtmlComment = updateHtmlCommentState(line, true);
     } else {
-      const openingFence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      const commentStart = line.indexOf("<!--");
+      const visibleLine = commentStart === -1 ? line : line.slice(0, commentStart);
+      const openingFence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(visibleLine);
       const validOpeningFence =
         openingFence &&
         (openingFence[1][0] === "~" || !openingFence[2].includes("`"));
@@ -99,10 +101,10 @@ function findCommandsHeading(content) {
           character: openingFence[1][0],
           length: openingFence[1].length
         };
-      } else if (line.includes("<!--")) {
-        inHtmlComment = updateHtmlCommentState(line, false);
-      } else if (/^ {0,3}##[\t ]+commands(?:[\t ]+#+)?[\t ]*$/i.test(line)) {
+      } else if (/^ {0,3}##[\t ]+commands(?:[\t ]+#+)?[\t ]*$/i.test(visibleLine)) {
         return { index: lineStart, length: line.length };
+      } else if (commentStart !== -1) {
+        inHtmlComment = updateHtmlCommentState(line, false);
       }
     }
 
