@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -11,12 +11,14 @@ import {
   findAgentInstructionFile
 } from "../src/doctor.js";
 
-async function makeProject() {
-  return mkdtemp(path.join(os.tmpdir(), "agents-md-doctor-"));
+async function makeProject(t) {
+  const projectPath = await mkdtemp(path.join(os.tmpdir(), "agents-md-doctor-"));
+  t.after(() => rm(projectPath, { recursive: true, force: true }));
+  return projectPath;
 }
 
-test("reports a missing AGENTS.md or CLAUDE.md file", async () => {
-  const projectPath = await makeProject();
+test("reports a missing AGENTS.md or CLAUDE.md file", async (t) => {
+  const projectPath = await makeProject(t);
   const report = await checkAgentInstructions(projectPath);
 
   assert.equal(report.passed, false);
@@ -24,8 +26,8 @@ test("reports a missing AGENTS.md or CLAUDE.md file", async () => {
   assert.equal(report.fileName, null);
 });
 
-test("passes a concise AGENTS.md with commands and testing guidance", async () => {
-  const projectPath = await makeProject();
+test("passes a concise AGENTS.md with commands and testing guidance", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
     `# AGENTS.md
@@ -74,8 +76,8 @@ test("scores instruction content without writing a file", async () => {
   assert.equal(report.fileName, "AGENTS.improved.md");
 });
 
-test("finds an instruction file with resolved metadata and content", async () => {
-  const projectPath = await makeProject();
+test("finds an instruction file with resolved metadata and content", async (t) => {
+  const projectPath = await makeProject(t);
   const filePath = path.join(projectPath, "AGENTS.md");
   const content = "# Project instructions\n";
   await writeFile(filePath, content);
@@ -90,8 +92,8 @@ test("finds an instruction file with resolved metadata and content", async () =>
   });
 });
 
-test("prefers AGENTS.md when both instruction files exist", async () => {
-  const projectPath = await makeProject();
+test("prefers AGENTS.md when both instruction files exist", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(path.join(projectPath, "AGENTS.md"), "AGENTS instructions");
   await writeFile(path.join(projectPath, "CLAUDE.md"), "CLAUDE instructions");
 
@@ -101,16 +103,16 @@ test("prefers AGENTS.md when both instruction files exist", async () => {
   assert.equal(result.content, "AGENTS instructions");
 });
 
-test("returns null when no instruction file exists", async () => {
-  const projectPath = await makeProject();
+test("returns null when no instruction file exists", async (t) => {
+  const projectPath = await makeProject(t);
 
   const result = await findAgentInstructionFile(projectPath);
 
   assert.equal(result, null);
 });
 
-test("warns about repeated lint or formatting instructions", async () => {
-  const projectPath = await makeProject();
+test("warns about repeated lint or formatting instructions", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
     `# AGENTS.md
@@ -127,8 +129,8 @@ Follow ESLint, Prettier, Biome, Ruff, Black, indentation, semicolon, and trailin
   assert.equal(report.findings.some((finding) => finding.id === "lint-leakage"), true);
 });
 
-test("strict mode fails when warnings are found", async () => {
-  const projectPath = await makeProject();
+test("strict mode fails when warnings are found", async (t) => {
+  const projectPath = await makeProject(t);
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
     `# AGENTS.md
@@ -144,8 +146,8 @@ Follow ESLint, Prettier, Biome, Ruff, Black, indentation, semicolon, and trailin
   assert.equal(report.passed, false);
 });
 
-test("detects overly large instruction files", async () => {
-  const projectPath = await makeProject();
+test("detects overly large instruction files", async (t) => {
+  const projectPath = await makeProject(t);
   const longBody = Array.from({ length: 205 }, (_, index) => `- Rule ${index}: keep going`).join("\n");
 
   await writeFile(
@@ -174,8 +176,8 @@ test("CLI prints the package version", () => {
   assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+$/);
 });
 
-test("CLI supports JSON output", async () => {
-  const projectPath = await makeProject();
+test("CLI supports JSON output", async (t) => {
+  const projectPath = await makeProject(t);
   await mkdir(path.join(projectPath, "docs"));
   await writeFile(
     path.join(projectPath, "AGENTS.md"),
